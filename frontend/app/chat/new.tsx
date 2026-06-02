@@ -3,6 +3,7 @@ import { View, Text, FlatList, TouchableOpacity, Image, StyleSheet, ActivityIndi
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import ChatApi from "../../src/services/chatApi";
+import { useSocket } from "../../src/contexts/SocketContext";
 
 const NewChatScreen = () => {
     const router = useRouter();
@@ -11,6 +12,7 @@ const NewChatScreen = () => {
     const [error, setError] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
     const [loading, setLoading] = useState(false);
+    const { onlineUsers } = useSocket();
 
     const loadUsers = async (query: string) => {
         if (!query.trim()) {
@@ -82,7 +84,8 @@ const NewChatScreen = () => {
     };
 
     const renderUser = ({ item }: { item: any }) => {
-        const isOnline = item.is_online === 1;
+        // Fallback to static is_online if not tracked in realtime socket yet
+        const isOnline = onlineUsers[item.user_id] !== undefined ? onlineUsers[item.user_id] : item.is_online === 1;
 
         return (
             <TouchableOpacity style={styles.userItem} onPress={() => handleSelectUser(item)}>

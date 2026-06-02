@@ -37,6 +37,7 @@ import AttachmentSheet from "../../src/components/Chat/AttachmentSheet";
 import VoiceRecorder from "../../src/components/Chat/VoiceRecorder";
 import { useCall } from "../../src/contexts/CallContext";
 import { useAuth } from "../../src/contexts/AuthContext";
+import { useSocket } from "../../src/contexts/SocketContext";
 import { ChatColors } from "../../src/theme/chatTheme";
 
 const { width, height } = Dimensions.get("window");
@@ -64,6 +65,7 @@ const ChatDetailScreen = () => {
     const conversationName = params.conversationName as string;
     const { user: currentUser } = useAuth();
     const { setActiveCall } = useCall();
+    const { onlineUsers } = useSocket();
     const avatar = params.avatar as string;
 
     const [messages, setMessages] = useState<any[]>([]);
@@ -549,12 +551,16 @@ const ChatDetailScreen = () => {
         setShowAttachmentMenu(false);
     };
 
+    const peerId = conversation?.participants?.find((p: any) => p.userId !== userId)?.userId;
+    const isPeerOnline = peerId ? (onlineUsers[peerId] === true) : false;
+    const isOnline = Object.keys(typingUsers).length > 0 || isPeerOnline;
+
     return (
         <SafeAreaView style={styles.container}>
             <ChatHeader 
                 name={conversationName || conversation?.name || "Đang tải..."}
                 avatar={avatar || conversation?.avatarPath}
-                isOnline={Object.keys(typingUsers).length > 0}
+                isOnline={isOnline}
                 isGroup={conversation?.type === "group"}
                 onCall={() => handleCall("voice")}
                 onVideoCall={() => handleCall("video")}

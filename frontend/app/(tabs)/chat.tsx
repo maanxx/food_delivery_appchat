@@ -14,6 +14,8 @@ import ChatApi from "../../src/services/chatApi";
 import SocketService from "../../src/services/socketService";
 import ConversationItem from "../../src/components/Chat/ConversationItem";
 import { ChatColors } from "../../src/theme/chatTheme";
+import { useSocket } from "../../src/contexts/SocketContext";
+import { useAuth } from "../../src/contexts/AuthContext";
 
 const ChatListScreen = () => {
     const router = useRouter();
@@ -21,6 +23,8 @@ const ChatListScreen = () => {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
+    const { onlineUsers } = useSocket();
+    const { user: currentUser } = useAuth();
 
     const loadConversations = async () => {
         try {
@@ -141,15 +145,20 @@ const ChatListScreen = () => {
             <FlatList
                 data={filteredConversations}
                 keyExtractor={(item) => item.conversationId}
-                renderItem={({ item }) => (
-                    <ConversationItem 
-                        item={item} 
-                        onPress={navigateToChat}
-                        onDelete={handleDelete}
-                        onMute={() => {}}
-                        onArchive={() => {}}
-                    />
-                )}
+                renderItem={({ item }) => {
+                    const peer = item.participants?.find((p: any) => p.userId !== currentUser?.id && p.userId !== currentUser?.user_id);
+                    const isOnline = peer ? (onlineUsers[peer.userId] !== undefined ? onlineUsers[peer.userId] : peer.isOnline) : item.isOnline;
+                    const itemWithOnline = { ...item, isOnline };
+                    return (
+                        <ConversationItem 
+                            item={itemWithOnline} 
+                            onPress={navigateToChat}
+                            onDelete={handleDelete}
+                            onMute={() => {}}
+                            onArchive={() => {}}
+                        />
+                    );
+                }}
                 refreshControl={
                     <RefreshControl 
                         refreshing={refreshing} 
