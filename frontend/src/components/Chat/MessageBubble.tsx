@@ -238,9 +238,9 @@ const MessageBubble = ({
                         </Text>
                         {isMyMessage && (
                             <Ionicons 
-                                name={item.isRead ? "checkmark-done" : "checkmark"} 
+                                name={(item.status === "seen" || item.isRead) ? "checkmark-done" : (item.status === "delivered" ? "checkmark-done" : "checkmark")} 
                                 size={14} 
-                                color={item.isRead ? "#4fc3f7" : "rgba(255,255,255,0.7)"} 
+                                color={(item.status === "seen" || item.isRead) ? "#4fc3f7" : "rgba(255,255,255,0.7)"} 
                                 style={{ marginLeft: 4 }}
                             />
                         )}

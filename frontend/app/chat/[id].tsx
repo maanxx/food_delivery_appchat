@@ -373,6 +373,38 @@ const ChatDetailScreen = () => {
         }
     };
 
+    const handleSendVoice = async (uri: string, duration: number) => {
+        setIsUploading(true);
+        try {
+            const extension = uri.split('.').pop() || 'm4a';
+            const mimeType = extension === '3gp' ? 'audio/3gpp' : 
+                            extension === 'webm' ? 'audio/webm' : 
+                            extension === 'mp4' ? 'audio/mp4' : 'audio/m4a';
+            const formData = new FormData();
+            formData.append("file", {
+                uri: Platform.OS === 'android' && !uri.startsWith('file://') ? `file://${uri}` : uri,
+                name: `voice_message.${extension}`,
+                type: mimeType
+            } as any);
+            const data = await ChatApi.uploadFile(formData);
+            const finalMetadata = { durationSeconds: duration, attachments: [data] };
+            await ChatApi.sendMessage(conversationId, "", "voice", finalMetadata);
+        } catch (error) {
+            console.error("Voice upload error:", error);
+            Alert.alert("Lỗi", "Không thể gửi tin nhắn thoại");
+        } finally {
+            setIsUploading(false);
+        }
+    };
+
+    const pickLocation = async () => {
+        setShowAttachmentMenu(false);
+        Alert.alert(
+            "Chia sẻ vị trí", 
+            "Tính năng chia sẻ bản đồ trực tiếp đang được cập nhật."
+        );
+    };
+
     const pickImage = async () => {
         setShowAttachmentMenu(false);
         const result = await ImagePicker.launchImageLibraryAsync({
@@ -482,6 +514,10 @@ const ChatDetailScreen = () => {
 
     const handleCall = async (type: "voice" | "video") => {
         if (!conversation) return;
+        if (conversation?.isGroup || conversation?.type === "group") {
+            Alert.alert("Thông báo", "Tính năng gọi nhóm (Group Call) đang được phát triển.");
+            return;
+        }
         const recipient = conversation.participants.find((p: any) => p.userId !== userId);
         if (!recipient) return;
         try {
@@ -564,7 +600,13 @@ const ChatDetailScreen = () => {
                 isGroup={conversation?.type === "group"}
                 onCall={() => handleCall("voice")}
                 onVideoCall={() => handleCall("video")}
-                onInfo={() => conversation?.type === "group" ? router.push(`/chat/group-details?id=${conversationId}`) : {}}
+                onInfo={() => {
+                    if (conversation?.type === "group") {
+                        router.push({ pathname: '/chat/group-details', params: { id: conversationId } });
+                    } else {
+                        Alert.alert("Thông tin", "Tính năng xem hồ sơ cá nhân đang phát triển");
+                    }
+                }}
             />
 
             <KeyboardAvoidingView 
@@ -617,29 +659,10 @@ const ChatDetailScreen = () => {
                         setShowEmojiPicker(false);
                         setShowAttachmentMenu(true);
                     }}
+                    onSendVoice={handleSendVoice}
                     onEmoji={() => {
                         Keyboard.dismiss();
                         setShowEmojiPicker(!showEmojiPicker);
-                    }}
-                    onVoice={() => {}} 
-                    onSendVoice={async (uri, duration) => {
-                        try {
-                            const extension = uri.split('.').pop() || 'm4a';
-                            const mimeType = extension === '3gp' ? 'audio/3gpp' : 
-                                            extension === 'webm' ? 'audio/webm' : 
-                                            extension === 'mp4' ? 'audio/mp4' : 'audio/m4a';
-                            const formData = new FormData();
-                            formData.append("file", {
-                                uri: Platform.OS === 'android' && !uri.startsWith('file://') ? `file://${uri}` : uri,
-                                name: `voice_message.${extension}`,
-                                type: mimeType
-                            } as any);
-                            const data = await ChatApi.uploadFile(formData);
-                            await handleSend("", "voice", [{ ...data, type: "audio" }], { duration });
-                        } catch (error) {
-                            console.error("Voice upload error:", error);
-                            Alert.alert("Lỗi", "Không thể gửi tin nhắn thoại");
-                        }
                     }}
                     isTyping={inputText.length > 0}
                 />
@@ -667,6 +690,7 @@ const ChatDetailScreen = () => {
                     if (type === "camera") takePhoto();
                     else if (type === "gallery") pickImage();
                     else if (type === "document") pickDocument();
+                    else if (type === "location") pickLocation();
                 }}
             />
 
