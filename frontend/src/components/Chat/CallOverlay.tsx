@@ -34,7 +34,7 @@ const CallOverlay = () => {
     const { incomingCall, activeCall, setIncomingCall, setActiveCall, cleanupCall: contextCleanup } = useCall();
     const [currentUser, setCurrentUser] = useState<any>(null);
     const [localStream, setLocalStream] = useState<any>(null);
-    const [remoteStream, setRemoteStream] = useState<any>(null);
+    const [remoteStreams, setRemoteStreams] = useState<{ [userId: string]: any }>({});
     const [isMuted, setIsMuted] = useState(false);
     const [isVideoOff, setIsVideoOff] = useState(false);
     const [isFrontCamera, setIsFrontCamera] = useState(true);
@@ -42,7 +42,7 @@ const CallOverlay = () => {
     const [callStatus, setCallStatus] = useState<"ringing" | "connecting" | "connected">("ringing");
     const [callDuration, setCallDuration] = useState(0);
 
-    const pcRef = useRef<any>(null);
+    const pcRefs = useRef<{ [userId: string]: any }>({});
     const pulseAnim = useRef(new Animated.Value(1)).current;
     const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const ringingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -73,19 +73,19 @@ const CallOverlay = () => {
 
         const handleOffer = async (data: any) => {
             if (isExpoGo) return;
-            console.log("[CallOverlay] Received offer:", data);
+            console.log("[CallOverlay] Received offer from:", data.fromUserId);
             await handleOfferSignal(data.offer, data.fromUserId);
         };
 
         const handleAnswer = async (data: any) => {
             if (isExpoGo) return;
-            console.log("[CallOverlay] Received answer:", data);
-            await handleAnswerSignal(data.answer);
+            console.log("[CallOverlay] Received answer from:", data.fromUserId || data.recipientId);
+            await handleAnswerSignal(data.answer, data.fromUserId || data.recipientId);
         };
 
         const handleCandidate = async (data: any) => {
             if (isExpoGo) return;
-            console.log("[CallOverlay] Received ice_candidate");
+            console.log("[CallOverlay] Received ice_candidate from:", data.fromUserId);
             
             const candidatePayload = typeof data.candidate === 'object' && data.candidate !== null
                 ? data.candidate
@@ -95,7 +95,7 @@ const CallOverlay = () => {
                     sdpMid: data.sdpMid || "0"
                 };
 
-            await handleCandidateSignal(candidatePayload);
+            await handleCandidateSignal(candidatePayload, data.fromUserId);
         };
 
         SocketService.on("offer", handleOffer);
@@ -131,16 +131,33 @@ const CallOverlay = () => {
         return `${m}:${s}`;
     };
 
+    const getOrCreateLocalStream = async (isVideo: boolean) => {
+        if (localStream) return localStream;
+        const constraints = {
+            audio: true,
+            video: isVideo ? { facingMode: "user" } : false
+        };
+        try {
+            const stream = await mediaDevices.getUserMedia(constraints);
+            setLocalStream(stream);
+            return stream;
+        } catch (error) {
+            console.error("[CallOverlay] Failed to get local stream:", error);
+            return null;
+        }
+    };
+
     const createPeerConnection = async (targetId: string, isVideo: boolean) => {
-        if (isExpoGo || !RTCPeerConnection) return null;
+        if (isExpoGo || !RTCPeerConnection || !targetId) return null;
+        if (pcRefs.current[targetId]) return pcRefs.current[targetId]; // Already exists
         
+        console.log(`[CallOverlay] Creating PC for target: ${targetId}`);
         const configuration = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
         const pc = new RTCPeerConnection(configuration);
-        pcRef.current = pc;
+        pcRefs.current[targetId] = pc;
 
         pc.onicecandidate = (event: any) => {
             if (event.candidate) {
-                // Send in a format perfectly compatible with simple-peer on the Web
                 SocketService.emit("ice_candidate", {
                     callId: activeCall?.callId || incomingCall?.callId,
                     candidate: {
@@ -157,40 +174,44 @@ const CallOverlay = () => {
         };
 
         pc.oniceconnectionstatechange = () => {
-            console.log("[CallOverlay] ICE Connection State:", pc.iceConnectionState);
+            console.log(`[CallOverlay] ICE Connection State [${targetId}]:`, pc.iceConnectionState);
             if (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed") {
                 setCallStatus("connected");
                 if (ringingTimeoutRef.current) clearTimeout(ringingTimeoutRef.current);
             } else if (pc.iceConnectionState === "failed" || pc.iceConnectionState === "closed" || pc.iceConnectionState === "disconnected") {
-                handleEndCall();
+                // Remove stream
+                setRemoteStreams(prev => {
+                    const newStreams = { ...prev };
+                    delete newStreams[targetId];
+                    return newStreams;
+                });
+                delete pcRefs.current[targetId];
+                if (Object.keys(pcRefs.current).length === 0) {
+                    handleEndCall();
+                }
             }
         };
 
         pc.ontrack = (event: any) => {
-            console.log("[CallOverlay] Remote track received");
+            console.log(`[CallOverlay] Remote track received from ${targetId}`);
             if (event.streams && event.streams[0]) {
-                setRemoteStream(event.streams[0]);
+                setRemoteStreams(prev => ({
+                    ...prev,
+                    [targetId]: event.streams[0]
+                }));
             }
         };
 
-        const constraints = {
-            audio: true,
-            video: isVideo ? { facingMode: "user" } : false
-        };
-
-        try {
-            const stream = await mediaDevices.getUserMedia(constraints);
-            setLocalStream(stream);
+        const stream = await getOrCreateLocalStream(isVideo);
+        if (stream) {
             stream.getTracks().forEach((track: any) => pc.addTrack(track, stream));
-        } catch (error) {
-            console.error("[CallOverlay] Failed to get local stream:", error);
         }
 
         return pc;
     };
 
     const initiateWebRTC = async (targetId: string, isVideo: boolean) => {
-        if (isExpoGo) return;
+        if (isExpoGo || !targetId) return;
         setCallStatus("connecting");
         const pc = await createPeerConnection(targetId, isVideo);
         if (!pc) return;
@@ -211,7 +232,7 @@ const CallOverlay = () => {
     };
 
     const handleOfferSignal = async (offer: any, fromId: string) => {
-        if (isExpoGo) return;
+        if (isExpoGo || !fromId) return;
         setCallStatus("connecting");
         const pc = await createPeerConnection(fromId, activeCall?.type === "video");
         if (!pc) return;
@@ -232,20 +253,27 @@ const CallOverlay = () => {
         }
     };
 
-    const handleAnswerSignal = async (answer: any) => {
-        if (pcRef.current) {
+    const handleAnswerSignal = async (answer: any, fromId: string) => {
+        // Find PC by fromId, fallback to first key if not found (for legacy 1-on-1)
+        const targetId = fromId || Object.keys(pcRefs.current)[0];
+        const pc = pcRefs.current[targetId];
+        
+        if (pc) {
             try {
-                await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+                await pc.setRemoteDescription(new RTCSessionDescription(answer));
             } catch (err) {
                 console.error("[CallOverlay] Failed to set remote desc:", err);
             }
         }
     };
 
-    const handleCandidateSignal = async (candidate: any) => {
-        if (pcRef.current) {
+    const handleCandidateSignal = async (candidate: any, fromId: string) => {
+        const targetId = fromId || Object.keys(pcRefs.current)[0];
+        const pc = pcRefs.current[targetId];
+
+        if (pc) {
             try {
-                await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+                await pc.addIceCandidate(new RTCIceCandidate(candidate));
             } catch (err) {
                 console.error("[CallOverlay] Failed to add ICE candidate:", err);
             }
@@ -257,15 +285,17 @@ const CallOverlay = () => {
         if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
         if (ringingTimeoutRef.current) clearTimeout(ringingTimeoutRef.current);
         
-        if (pcRef.current) {
-            pcRef.current.close();
-            pcRef.current = null;
-        }
+        // Close all peer connections
+        Object.values(pcRefs.current).forEach((pc: any) => {
+            try { pc.close(); } catch(e) {}
+        });
+        pcRefs.current = {};
+        
         if (localStream) {
             localStream.getTracks().forEach((track: any) => track.stop());
             setLocalStream(null);
         }
-        setRemoteStream(null);
+        setRemoteStreams({});
         setIsMuted(false);
         setIsVideoOff(false);
         setIsFrontCamera(true);
@@ -275,11 +305,22 @@ const CallOverlay = () => {
     };
 
     useEffect(() => {
-        if (activeCall && activeCall.isInitiator && !pcRef.current && callStatus === "ringing") {
+        if (activeCall && activeCall.isInitiator && Object.keys(pcRefs.current).length === 0 && callStatus === "ringing") {
             console.log("[CallOverlay] Call accepted, initiating WebRTC offer...");
-            initiateWebRTC(activeCall.recipientId, activeCall.type === "video");
+            
+            // Check if group call
+            if (activeCall.isGroupCall && activeCall.participantIds && activeCall.participantIds.length > 0) {
+                activeCall.participantIds.forEach((pId: string) => {
+                    const currentId = String(currentUser?.user_id || currentUser?.id);
+                    if (String(pId) !== currentId) {
+                        initiateWebRTC(pId, activeCall.type === "video");
+                    }
+                });
+            } else {
+                initiateWebRTC(activeCall.recipientId, activeCall.type === "video");
+            }
         }
-    }, [activeCall, callStatus]);
+    }, [activeCall, callStatus, currentUser]);
 
     const startPulse = () => {
         Animated.loop(
@@ -328,20 +369,21 @@ const CallOverlay = () => {
 
     const toggleMute = () => {
         if (localStream) {
+            const newMutedState = !isMuted;
             localStream.getAudioTracks().forEach((track: any) => {
-                track.enabled = isMuted;
-                track.enabled = isMuted;
+                track.enabled = !newMutedState;
             });
-            setIsMuted(!isMuted);
+            setIsMuted(newMutedState);
         }
     };
 
     const toggleVideo = () => {
         if (localStream) {
+            const newVideoState = !isVideoOff;
             localStream.getVideoTracks().forEach((track: any) => {
-                track.enabled = isVideoOff;
+                track.enabled = !newVideoState;
             });
-            setIsVideoOff(!isVideoOff);
+            setIsVideoOff(newVideoState);
         }
     };
 
@@ -358,6 +400,53 @@ const CallOverlay = () => {
 
     if (!incomingCall && !activeCall) return null;
 
+    // Logic to render grid
+    const renderRemoteStreams = () => {
+        const streams = Object.values(remoteStreams);
+        if (streams.length === 0) {
+            return (
+                <Image 
+                    source={activeCall?.callerAvatar ? { uri: activeCall.callerAvatar } : require("../../assets/images/user-avatar.jpg")} 
+                    style={styles.largeAvatar} 
+                />
+            );
+        }
+
+        if (streams.length === 1) {
+            return (
+                <RTCView 
+                    streamURL={streams[0].toURL()} 
+                    style={styles.remoteVideoFull} 
+                    objectFit="cover" 
+                />
+            );
+        }
+
+        // 2 streams = split horizontally
+        if (streams.length === 2) {
+            return (
+                <View style={styles.gridContainer}>
+                    {streams.map((stream, idx) => (
+                        <View key={idx} style={styles.gridCell2}>
+                            <RTCView streamURL={stream.toURL()} style={styles.remoteVideoFull} objectFit="cover" />
+                        </View>
+                    ))}
+                </View>
+            );
+        }
+
+        // 3-4 streams = 2x2 grid
+        return (
+            <View style={styles.gridContainer}>
+                {streams.slice(0,4).map((stream, idx) => (
+                    <View key={idx} style={styles.gridCell4}>
+                        <RTCView streamURL={stream.toURL()} style={styles.remoteVideoFull} objectFit="cover" />
+                    </View>
+                ))}
+            </View>
+        );
+    };
+
     return (
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
             {/* Incoming Call Modal */}
@@ -370,9 +459,10 @@ const CallOverlay = () => {
                                 style={styles.avatar} 
                             />
                         </Animated.View>
-                        <Text style={styles.callerName}>{incomingCall?.callerName || "Cuộc gọi đến"}</Text>
+                        <Text style={styles.callerName}>{incomingCall?.groupName || incomingCall?.callerName || "Cuộc gọi đến"}</Text>
                         <Text style={styles.callType}>
-                            {incomingCall?.type === "video" ? "Cuộc gọi video đến..." : "Cuộc gọi thoại đến..."}
+                            {incomingCall?.isGroupCall ? "Cuộc gọi nhóm đến..." :
+                             incomingCall?.type === "video" ? "Cuộc gọi video đến..." : "Cuộc gọi thoại đến..."}
                         </Text>
                         
                         <View style={styles.actionButtons}>
@@ -403,20 +493,16 @@ const CallOverlay = () => {
                         </View>
                     ) : (
                         <View style={styles.activeCallContainer}>
-                            {activeCall?.type === "video" && remoteStream ? (
-                                <RTCView 
-                                    streamURL={remoteStream.toURL()} 
-                                    style={styles.remoteVideo} 
-                                    objectFit="cover" 
-                                />
-                            ) : (
+                            {/* Remote Streams Grid */}
+                            {activeCall?.type === "video" ? renderRemoteStreams() : (
                                 <Image 
                                     source={activeCall?.callerAvatar ? { uri: activeCall.callerAvatar } : require("../../assets/images/user-avatar.jpg")} 
                                     style={styles.largeAvatar} 
                                 />
                             )}
 
-                            {activeCall?.type === "video" && localStream && (
+                            {/* Local Stream (PIP) */}
+                            {activeCall?.type === "video" && localStream && !isVideoOff && (
                                 <View style={styles.localVideoContainer}>
                                     <RTCView 
                                         streamURL={localStream.toURL()} 
@@ -429,8 +515,8 @@ const CallOverlay = () => {
                                 </View>
                             )}
 
-                            <View style={styles.callDetails}>
-                                <Text style={styles.activeCallerName}>{activeCall?.callerName || "Đang trong cuộc gọi"}</Text>
+                            <View style={[styles.callDetails, Object.keys(remoteStreams).length > 0 && activeCall?.type === "video" ? styles.callDetailsTop : null]}>
+                                <Text style={styles.activeCallerName}>{activeCall?.groupName || activeCall?.callerName || "Đang trong cuộc gọi"}</Text>
                                 <Text style={styles.activeTimer}>
                                     {callStatus === "ringing" ? "Đang đổ chuông..." : 
                                      callStatus === "connecting" ? "Đang kết nối..." :
@@ -438,6 +524,7 @@ const CallOverlay = () => {
                                 </Text>
                             </View>
                             
+                            {/* Controls */}
                             <View style={styles.activeActions}>
                                 <TouchableOpacity style={[styles.activeBtn, isMuted && styles.activeBtnOff]} onPress={toggleMute}>
                                     <Ionicons name={isMuted ? "mic-off" : "mic"} size={24} color="#fff" />
@@ -472,15 +559,22 @@ const styles = StyleSheet.create({
     acceptBtn: { backgroundColor: "#4CAF50" },
     
     activeCallContainer: { flex: 1, justifyContent: "center", alignItems: "center", width: "100%" },
-    remoteVideo: { width: "100%", height: "100%", position: "absolute" },
-    localVideoContainer: { position: "absolute", top: 50, right: 20, width: 100, height: 160, borderRadius: 10, overflow: "hidden", borderWidth: 2, borderColor: "#fff", backgroundColor: "#000" },
+    remoteVideoFull: { width: "100%", height: "100%", position: "absolute" },
+    gridContainer: { flex: 1, width: "100%", flexDirection: "row", flexWrap: "wrap" },
+    gridCell2: { width: "100%", height: "50%", borderBottomWidth: 1, borderColor: "#000" },
+    gridCell4: { width: "50%", height: "50%", borderWidth: 0.5, borderColor: "#000" },
+
+    localVideoContainer: { position: "absolute", bottom: 120, right: 20, width: 100, height: 150, borderRadius: 12, overflow: "hidden", borderWidth: 2, borderColor: "#fff", backgroundColor: "#000", zIndex: 10, elevation: 10 },
     localVideo: { width: "100%", height: "100%" },
-    flipCameraBtn: { position: "absolute", bottom: 10, right: 10, backgroundColor: "rgba(0,0,0,0.5)", padding: 5, borderRadius: 20 },
-    callDetails: { position: "absolute", top: height * 0.4, alignItems: "center" },
+    flipCameraBtn: { position: "absolute", bottom: 5, right: 5, backgroundColor: "rgba(0,0,0,0.6)", padding: 6, borderRadius: 20 },
+    
+    callDetails: { position: "absolute", top: height * 0.4, alignItems: "center", zIndex: 5 },
+    callDetailsTop: { top: 60, backgroundColor: "rgba(0,0,0,0.5)", paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 },
     largeAvatar: { width: 150, height: 150, borderRadius: 75, marginBottom: 20, borderWidth: 3, borderColor: "#FF4B3A" },
-    activeCallerName: { fontSize: 24, fontWeight: "bold", color: "#fff", textShadowColor: "rgba(0,0,0,0.5)", textShadowOffset: { width: 1, height: 1 }, textShadowRadius: 5 },
-    activeTimer: { fontSize: 18, color: "rgba(255,255,255,0.7)", marginBottom: 100 },
-    activeActions: { flexDirection: "row", alignItems: "center", justifyContent: "space-around", width: "80%", position: "absolute", bottom: 50 },
+    activeCallerName: { fontSize: 24, fontWeight: "bold", color: "#fff", textShadowColor: "rgba(0,0,0,0.8)", textShadowOffset: { width: 1, height: 1 }, textShadowRadius: 5 },
+    activeTimer: { fontSize: 18, color: "rgba(255,255,255,0.9)", textShadowColor: "rgba(0,0,0,0.8)", textShadowOffset: { width: 1, height: 1 }, textShadowRadius: 5 },
+    
+    activeActions: { flexDirection: "row", alignItems: "center", justifyContent: "space-around", width: "80%", position: "absolute", bottom: 40, zIndex: 10 },
     activeBtn: { width: 50, height: 50, borderRadius: 25, backgroundColor: "rgba(255,255,255,0.2)", justifyContent: "center", alignItems: "center" },
     activeBtnOff: { backgroundColor: "#ff4d4d" },
     endCallBtn: { width: 70, height: 70, borderRadius: 35, backgroundColor: "#ff4d4d" },
