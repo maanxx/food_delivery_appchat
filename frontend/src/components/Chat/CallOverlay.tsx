@@ -141,8 +141,23 @@ const CallOverlay = () => {
             const stream = await mediaDevices.getUserMedia(constraints);
             setLocalStream(stream);
             return stream;
-        } catch (error) {
+        } catch (error: any) {
             console.error("[CallOverlay] Failed to get local stream:", error);
+            if (isVideo) {
+                console.log("[CallOverlay] Falling back to audio only...");
+                try {
+                    const fallbackStream = await mediaDevices.getUserMedia({ audio: true, video: false });
+                    setLocalStream(fallbackStream);
+                    Alert.alert(
+                        "Lỗi Camera", 
+                        "Không tìm thấy Camera trên máy của bạn (hoặc máy ảo chưa bật Camera). Bạn vẫn có thể nói chuyện bằng âm thanh và xem video của người kia."
+                    );
+                    return fallbackStream;
+                } catch (fallbackErr) {
+                    console.error("[CallOverlay] Audio fallback failed:", fallbackErr);
+                    return null;
+                }
+            }
             return null;
         }
     };
