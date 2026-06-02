@@ -10,6 +10,7 @@ const NewChatScreen = () => {
     const [filteredUsers, setFilteredUsers] = useState<any[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
+    const [loading, setLoading] = useState(false);
 
     const loadUsers = async (query: string) => {
         if (!query.trim()) {

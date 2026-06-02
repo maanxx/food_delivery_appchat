@@ -43,6 +43,10 @@ export const CallProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 callerAvatar: data.callerAvatar || data.caller_avatar,
                 type: data.callType || data.call_type || "voice",
                 conversationId: data.conversationId || data.conversation_id,
+                isGroupCall: data.isGroupCall || false,
+                groupName: data.groupName || data.group_name,
+                groupAvatar: data.groupAvatar || data.group_avatar,
+                participantIds: data.participantIds || data.participant_ids,
             });
         };
 
@@ -55,6 +59,10 @@ export const CallProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 callerName: data.recipientName || data.recipient_name,
                 callerAvatar: data.recipientAvatar || data.recipient_avatar,
                 type: data.callType || data.call_type || (activeCall ? activeCall.type : "voice"),
+                isGroupCall: activeCall?.isGroupCall || data.isGroupCall || false,
+                groupName: activeCall?.groupName || data.groupName || data.group_name,
+                groupAvatar: activeCall?.groupAvatar || data.groupAvatar || data.group_avatar,
+                participantIds: activeCall?.participantIds || data.participantIds || data.participant_ids,
                 isInitiator: true // Since we received call_accepted, we are the initiator
             });
         };

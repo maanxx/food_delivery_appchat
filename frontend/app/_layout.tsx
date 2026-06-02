@@ -10,7 +10,7 @@ import { SocketProvider } from "../src/contexts/SocketContext";
 import { CallProvider, useCall } from "../src/contexts/CallContext";
 import { View, ActivityIndicator } from "react-native";
 
-const CallOverlay = lazy(() => import("../src/components/Chat/CallOverlay"));
+import CallOverlay from "../src/components/Chat/CallOverlay";
 
 function RootLayoutNav() {
     const { isLoading } = useAuth();
@@ -39,9 +39,7 @@ function RootLayoutNav() {
                         </Stack>
                         
                         {(incomingCall || activeCall) && (
-                            <Suspense fallback={null}>
-                                <CallOverlay />
-                            </Suspense>
+                            <CallOverlay />
                         )}
                     </CartProvider>
                 </FoodProvider>

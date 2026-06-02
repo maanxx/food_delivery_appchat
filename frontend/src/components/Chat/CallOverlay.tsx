@@ -413,12 +413,16 @@ const CallOverlay = () => {
         }
 
         if (streams.length === 1) {
-            return (
+            return RTCView ? (
                 <RTCView 
                     streamURL={streams[0].toURL()} 
                     style={styles.remoteVideoFull} 
                     objectFit="cover" 
                 />
+            ) : (
+                <View style={[styles.remoteVideoFull, { justifyContent: 'center', alignItems: 'center' }]}>
+                    <Text style={{ color: 'white' }}>Video stream not supported</Text>
+                </View>
             );
         }
 
@@ -428,7 +432,13 @@ const CallOverlay = () => {
                 <View style={styles.gridContainer}>
                     {streams.map((stream, idx) => (
                         <View key={idx} style={styles.gridCell2}>
-                            <RTCView streamURL={stream.toURL()} style={styles.remoteVideoFull} objectFit="cover" />
+                            {RTCView ? (
+                                <RTCView streamURL={stream.toURL()} style={styles.remoteVideoFull} objectFit="cover" />
+                            ) : (
+                                <View style={[styles.remoteVideoFull, { justifyContent: 'center', alignItems: 'center' }]}>
+                                    <Text style={{ color: 'white' }}>Video stream not supported</Text>
+                                </View>
+                            )}
                         </View>
                     ))}
                 </View>
@@ -440,7 +450,13 @@ const CallOverlay = () => {
             <View style={styles.gridContainer}>
                 {streams.slice(0,4).map((stream, idx) => (
                     <View key={idx} style={styles.gridCell4}>
-                        <RTCView streamURL={stream.toURL()} style={styles.remoteVideoFull} objectFit="cover" />
+                        {RTCView ? (
+                            <RTCView streamURL={stream.toURL()} style={styles.remoteVideoFull} objectFit="cover" />
+                        ) : (
+                            <View style={[styles.remoteVideoFull, { justifyContent: 'center', alignItems: 'center' }]}>
+                                <Text style={{ color: 'white' }}>Video not supported</Text>
+                            </View>
+                        )}
                     </View>
                 ))}
             </View>
@@ -503,14 +519,21 @@ const CallOverlay = () => {
 
                             {/* Local Stream (PIP) */}
                             {activeCall?.type === "video" && localStream && !isVideoOff && (
-                                <View style={styles.localVideoContainer}>
-                                    <RTCView 
-                                        streamURL={localStream.toURL()} 
-                                        style={styles.localVideo} 
-                                        objectFit="cover" 
-                                    />
+                                <View style={[styles.localVideoContainer, styles.localVideoShadow]}>
+                                    {RTCView ? (
+                                        <RTCView 
+                                            streamURL={localStream.toURL()} 
+                                            style={styles.localVideo} 
+                                            objectFit="cover" 
+                                            mirror={isFrontCamera}
+                                        />
+                                    ) : (
+                                        <View style={[styles.localVideo, { justifyContent: 'center', alignItems: 'center' }]}>
+                                            <Ionicons name="videocam-off" size={30} color="#666" />
+                                        </View>
+                                    )}
                                     <TouchableOpacity style={styles.flipCameraBtn} onPress={toggleCamera}>
-                                        <Ionicons name="camera-reverse" size={24} color="#fff" />
+                                        <Ionicons name="camera-reverse" size={20} color="#fff" />
                                     </TouchableOpacity>
                                 </View>
                             )}
@@ -564,9 +587,10 @@ const styles = StyleSheet.create({
     gridCell2: { width: "100%", height: "50%", borderBottomWidth: 1, borderColor: "#000" },
     gridCell4: { width: "50%", height: "50%", borderWidth: 0.5, borderColor: "#000" },
 
-    localVideoContainer: { position: "absolute", bottom: 120, right: 20, width: 100, height: 150, borderRadius: 12, overflow: "hidden", borderWidth: 2, borderColor: "#fff", backgroundColor: "#000", zIndex: 10, elevation: 10 },
+    localVideoContainer: { position: "absolute", bottom: 120, right: 20, width: 110, height: 160, borderRadius: 16, overflow: "hidden", borderWidth: 2, borderColor: "#fff", backgroundColor: "#111", zIndex: 10 },
+    localVideoShadow: { elevation: 8, shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.5, shadowRadius: 5 },
     localVideo: { width: "100%", height: "100%" },
-    flipCameraBtn: { position: "absolute", bottom: 5, right: 5, backgroundColor: "rgba(0,0,0,0.6)", padding: 6, borderRadius: 20 },
+    flipCameraBtn: { position: "absolute", top: 10, right: 10, backgroundColor: "rgba(0,0,0,0.6)", width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center" },
     
     callDetails: { position: "absolute", top: height * 0.4, alignItems: "center", zIndex: 5 },
     callDetailsTop: { top: 60, backgroundColor: "rgba(0,0,0,0.5)", paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 },
@@ -575,9 +599,9 @@ const styles = StyleSheet.create({
     activeTimer: { fontSize: 18, color: "rgba(255,255,255,0.9)", textShadowColor: "rgba(0,0,0,0.8)", textShadowOffset: { width: 1, height: 1 }, textShadowRadius: 5 },
     
     activeActions: { flexDirection: "row", alignItems: "center", justifyContent: "space-around", width: "80%", position: "absolute", bottom: 40, zIndex: 10 },
-    activeBtn: { width: 50, height: 50, borderRadius: 25, backgroundColor: "rgba(255,255,255,0.2)", justifyContent: "center", alignItems: "center" },
-    activeBtnOff: { backgroundColor: "#ff4d4d" },
-    endCallBtn: { width: 70, height: 70, borderRadius: 35, backgroundColor: "#ff4d4d" },
+    activeBtn: { width: 64, height: 64, borderRadius: 32, backgroundColor: "rgba(255,255,255,0.2)", justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.4)" },
+    activeBtnOff: { backgroundColor: "#FF4B3A", borderColor: "#FF4B3A" },
+    endCallBtn: { width: 72, height: 72, borderRadius: 36, backgroundColor: "#FF4B3A", elevation: 5 },
 });
 
 export default CallOverlay;
